@@ -6,7 +6,7 @@ import { FindUserDto } from '../dto/find-user.dto';
 export class UserController {
   constructor(private readonly findUserUseCase: FindUserUseCase) {}
 
-  // GET /users/find?email=algo@correo.com
+ 
   @Get('find')
   async findUser(@Query() query: FindUserDto) {
     try {

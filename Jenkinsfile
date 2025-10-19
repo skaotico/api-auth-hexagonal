@@ -70,7 +70,7 @@ pipeline {
             ]
 
                     withVault([vaultSecrets: [[
-                path: 'secret/data/local/api_auth/db',
+                path: 'secret/local/api_auth/config',
                 engineVersion: '2',
                 credentialsId: 'skaotico_token_vault',
                 secretValues: testSecrets

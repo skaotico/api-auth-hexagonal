@@ -62,52 +62,25 @@ pipeline {
         //     }
         // }
 
-        stage('Obtener secretos desde Vault y crear .env') {
+        stage('Probar conexión a Vault') {
             steps {
                 script {
-                    // Mapeo de secretos desde Vault a variables de entorno
-                    def dbSecrets = [
-                [vaultKey: 'host', envVar: 'DB_HOST'],
-                [vaultKey: 'port', envVar: 'DB_PORT'],
-                [vaultKey: 'username', envVar: 'DB_USERNAME'],
-                [vaultKey: 'password', envVar: 'DB_PASSWORD'],
-                [vaultKey: 'db_name', envVar: 'DB_DATABASE']
-            ]
-
-                    def configSecrets = [
-                [vaultKey: 'api_name', envVar: 'API_NAME'],
-                [vaultKey: 'api_version', envVar: 'API_VERSION'],
-                [vaultKey: 'api_author', envVar: 'API_AUTHOR'],
-                [vaultKey: 'api_description', envVar: 'API_DESCRIPTION']
+                    def testSecrets = [
+                [vaultKey: 'host', envVar: 'DB_HOST']  
             ]
 
                     withVault([vaultSecrets: [[
                 path: 'secret/data/local/api_auth/db',
                 engineVersion: '2',
                 credentialsId: 'skaotico_token_vault_real',
-                secretValues: dbSecrets
+                secretValues: testSecrets
             ]]]) {
-                        withVault([vaultSecrets: [[
-                    path: 'secret/data/local/api_auth/config',
-                    engineVersion: '2',
-                    credentialsId: 'skaotico_token_vault_real',
-                    secretValues: configSecrets
-                ]]]) {
-                            def envFileContent = """\
-                        API_NAME=${env.API_NAME}
-                        API_VERSION=${env.API_VERSION}
-                        API_AUTHOR=${env.API_AUTHOR}
-                        API_DESCRIPTION=${env.API_DESCRIPTION}
-                        DB_DATABASE=${env.DB_DATABASE}
-                        DB_HOST=${env.DB_HOST}
-                        DB_PORT=${env.DB_PORT}
-                        DB_USERNAME=${env.DB_USERNAME}
-                        DB_PASSWORD=${env.DB_PASSWORD}
-                    """.stripIndent()
-
-                            writeFile file: '.env.dev', text: envFileContent
-                            echo 'Archivo .env.dev creado con todos los secretos de Vault'
-                }
+                        // Solo mostrar que la variable se obtuvo (sin revelar contraseña u otro secreto)
+                        if (env.DB_HOST) {
+                            echo 'Conexión a Vault OK, DB_HOST obtenido'
+                } else {
+                            error 'No se pudo obtener DB_HOST desde Vault'
+                        }
             }
                 }
             }

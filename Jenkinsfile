@@ -62,7 +62,7 @@ pipeline {
         //     }
         // }
 
-  stage('Obtener secretos desde Vault') {
+stage('Obtener secretos desde Vault') {
     steps {
         script {
             // Lista de secretos a obtener de Vault
@@ -78,20 +78,22 @@ pipeline {
                 [vaultKey: 'DB_NAME', envVar: 'DB_NAME']
             ]
 
-            // Obtener secretos desde Vault
+            // Unificamos los paths en un solo withVault
             withVault([
-                vaultSecrets: [[
-                    path: 'secret/local/api_auth/db',    // Path de los secretos de DB
-                    engineVersion: 2,
-                    credentialsId: 'skaotico_token_vault',
-                    secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') } // Solo DB_ para este path
-                ]],
-                vaultSecrets: [[
-                    path: 'secret/local/api_auth/config', // Path de los secretos de configuración
-                    engineVersion: 2,
-                    credentialsId: 'skaotico_token_vault',
-                    secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') } // Solo API_ para este path
-                ]]
+                vaultSecrets: [
+                    [
+                        path: 'secret/local/api_auth/db',
+                        engineVersion: 2,
+                        credentialsId: 'skaotico_token_vault',
+                        secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') } // solo DB_
+                    ],
+                    [
+                        path: 'secret/local/api_auth/config',
+                        engineVersion: 2,
+                        credentialsId: 'skaotico_token_vault',
+                        secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') } // solo API_
+                    ]
+                ]
             ]) {
                 // Generar archivo .env con todas las variables obtenidas
                 def envFileContent = """
@@ -113,6 +115,57 @@ pipeline {
         }
     }
 }
+//   stage('Obtener secretos desde Vault') {
+//     steps {
+//         script {
+//             // Lista de secretos a obtener de Vault
+//             def vaultSecrets = [
+//                 [vaultKey: 'API_DESCRIPTION', envVar: 'API_DESCRIPTION'],
+//                 [vaultKey: 'API_NAME', envVar: 'API_NAME'],
+//                 [vaultKey: 'API_VERSION', envVar: 'API_VERSION'],
+//                 [vaultKey: 'API_AUTHOR', envVar: 'API_AUTHOR'],
+//                 [vaultKey: 'DB_HOST', envVar: 'DB_HOST'],
+//                 [vaultKey: 'DB_PORT', envVar: 'DB_PORT'],
+//                 [vaultKey: 'DB_USER', envVar: 'DB_USER'],
+//                 [vaultKey: 'DB_PASS', envVar: 'DB_PASS'],
+//                 [vaultKey: 'DB_NAME', envVar: 'DB_NAME']
+//             ]
+
+//             // Obtener secretos desde Vault
+//             withVault([
+//                 vaultSecrets: [[
+//                     path: 'secret/local/api_auth/db',    // Path de los secretos de DB
+//                     engineVersion: 2,
+//                     credentialsId: 'skaotico_token_vault',
+//                     secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') } // Solo DB_ para este path
+//                 ]],
+//                 vaultSecrets: [[
+//                     path: 'secret/local/api_auth/config', // Path de los secretos de configuración
+//                     engineVersion: 2,
+//                     credentialsId: 'skaotico_token_vault',
+//                     secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') } // Solo API_ para este path
+//                 ]]
+//             ]) {
+//                 // Generar archivo .env con todas las variables obtenidas
+//                 def envFileContent = """
+//                 API_DESCRIPTION=${env.API_DESCRIPTION}
+//                 API_NAME=${env.API_NAME}
+//                 API_VERSION=${env.API_VERSION}
+//                 API_AUTHOR=${env.API_AUTHOR}
+//                 DB_HOST=${env.DB_HOST}
+//                 DB_PORT=${env.DB_PORT}
+//                 DB_USER=${env.DB_USER}
+//                 DB_PASS=${env.DB_PASS}
+//                 DB_NAME=${env.DB_NAME}
+//                 """.stripIndent()
+
+//                 writeFile file: '.env', text: envFileContent
+//                 echo ".env generado con éxito:"
+//                 sh 'cat .env'
+//             }
+//         }
+//     }
+// }
 
 
         // stage('Construir imagen Docker') {

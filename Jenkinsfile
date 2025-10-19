@@ -82,13 +82,13 @@ pipeline {
             ]
 
                     withVault([vaultSecrets: [[
-                path: 'local/api_auth/db',
+                path: 'secret/data/local/api_auth/db',
                 engineVersion: '2',
                 credentialsId: 'skaotico_token_vault',
                 secretValues: dbSecrets
             ]]]) {
                         withVault([vaultSecrets: [[
-                    path: 'local/api_auth/config',
+                    path: 'secret/data/local/api_auth/config',
                     engineVersion: '2',
                     credentialsId: 'skaotico_token_vault',
                     secretValues: configSecrets

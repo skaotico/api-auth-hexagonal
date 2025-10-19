@@ -66,7 +66,7 @@ pipeline {
             steps {
                 script {
                     def testSecrets = [
-                [vaultKey: 'host', envVar: 'DB_HOST']  
+                [vaultKey: 'DB_HOST', envVar: 'DB_HOST']  
             ]
 
                     withVault([vaultSecrets: [[

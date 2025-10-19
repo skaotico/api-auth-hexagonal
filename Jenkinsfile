@@ -1,40 +1,59 @@
 pipeline {
     agent any
 
+    /**
+     * Opciones globales del pipeline:
+     * - skipDefaultCheckout: evita el checkout automático del repositorio.
+     * - disableConcurrentBuilds: evita que se ejecuten builds concurrentes.
+     * - buildDiscarder: mantiene solo los últimos 5 builds para ahorrar espacio.
+     */
     options {
         skipDefaultCheckout(true)
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
 
+    /**
+     * Variables de entorno globales:
+     * - IMAGE_NAME: nombre base de la imagen Docker que se construirá.
+     */
     environment {
         IMAGE_NAME = 'api-auth-hex'
-    // NEXUS_REPO = '25.42.51.28:5000/api-auth'
-    // VAULT_PATH = 'secret/back/node/api-auth/dev'
     }
 
     stages {
+
+        /**
+         * Stage: Clonar repositorio
+         * - Limpia el workspace.
+         * - Clona el branch 'develop' del repositorio usando credenciales almacenadas en Jenkins.
+         * - Genera un tag incremental para Docker basado en el número de build de Jenkins.
+         */
         stage('Clonar repositorio') {
             steps {
-                echo 'Limpiando workspace...'
+                echo 'Limpiando workspace'
                 cleanWs()
+
                 script {
                     git branch: 'develop',
-                         credentialsId: 'git-token-skaotico',
-                         url: 'https://github.com/skaotico/api-auth-hexagonal'
-                    env.IMAGE_TAG = sh(
-                        script: 'git rev-parse --short HEAD',
-                        returnStdout: true
-                    ).trim()
+                        credentialsId: 'git-token-skaotico',
+                        url: 'https://github.com/skaotico/api-auth-hexagonal'
 
+                    env.IMAGE_TAG = "${BUILD_NUMBER}"
                     echo "IMAGE_TAG generado: ${env.IMAGE_TAG}"
                 }
             }
         }
 
+        /**
+         * Stage: Instalar dependencias y validar código
+         * - Instala dependencias usando npm ci.
+         * - Aplica formateo automático con Prettier.
+         * - Ejecuta ESLint para validación de código (no detiene el build si hay errores de lint).
+         */
         stage('Instalar dependencias y validar código') {
             steps {
-                echo 'Instalando dependencias y ejecutando herramientas de calidad...'
+                echo 'Instalando dependencias y validando código'
                 sh '''
                     npm ci
                     npx prettier --write .
@@ -43,185 +62,97 @@ pipeline {
             }
         }
 
-        // stage('Análisis de código con SonarQube') {
-        //     environment {
-        //         SCANNER_HOME = tool 'SonarScanner'
-        //     }
-        //     steps {
-        //         echo 'Ejecutando SonarQube Scanner...'
-        //         withSonarQubeEnv('sonar-dev') {
-        //             sh """
-        //                 ${SCANNER_HOME}/bin/sonar-scanner \
-        //                 -Dsonar.projectKey=api-auth \
-        //                 -Dsonar.projectName="TicketMante API Auth" \
-        //                 -Dsonar.sources=. \
-        //                 -Dsonar.host.url=\${env.SONAR_HOST_URL} \
-        //                 -Dsonar.login=\${env.SONAR_AUTH_TOKEN}
-        //             """
-        //         }
-        //     }
-        // }
-
-stage('Obtener secretos desde Vault') {
-    steps {
-        script {
-            // Lista de secretos a obtener de Vault
-            def vaultSecrets = [
-                [vaultKey: 'API_DESCRIPTION', envVar: 'API_DESCRIPTION'],
-                [vaultKey: 'API_NAME', envVar: 'API_NAME'],
-                [vaultKey: 'API_VERSION', envVar: 'API_VERSION'],
-                [vaultKey: 'API_AUTHOR', envVar: 'API_AUTHOR'],
-                [vaultKey: 'DB_HOST', envVar: 'DB_HOST'],
-                [vaultKey: 'DB_PORT', envVar: 'DB_PORT'],
-                [vaultKey: 'DB_USER', envVar: 'DB_USER'],
-                [vaultKey: 'DB_PASS', envVar: 'DB_PASS'],
-                [vaultKey: 'DB_NAME', envVar: 'DB_NAME']
-            ]
-
-            // Unificamos los paths en un solo withVault
-            withVault([
-                vaultSecrets: [
-                    [
-                        path: 'secret/local/api_auth/db',
-                        engineVersion: 2,
-                        credentialsId: 'skaotico_token_vault',
-                        secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') } // solo DB_
-                    ],
-                    [
-                        path: 'secret/local/api_auth/config',
-                        engineVersion: 2,
-                        credentialsId: 'skaotico_token_vault',
-                        secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') } // solo API_
+        /**
+         * Stage: Obtener secretos desde Vault
+         * - Define los secretos a obtener y los mapea a variables de entorno.
+         * - Separa los secretos de base de datos y de configuración.
+         * - Genera un archivo .env con los valores obtenidos de Vault.
+         */
+        stage('Obtener secretos desde Vault') {
+            steps {
+                script {
+                    def vaultSecrets = [
+                        [vaultKey: 'API_DESCRIPTION', envVar: 'API_DESCRIPTION'],
+                        [vaultKey: 'API_NAME', envVar: 'API_NAME'],
+                        [vaultKey: 'API_VERSION', envVar: 'API_VERSION'],
+                        [vaultKey: 'API_AUTHOR', envVar: 'API_AUTHOR'],
+                        [vaultKey: 'DB_HOST', envVar: 'DB_HOST'],
+                        [vaultKey: 'DB_PORT', envVar: 'DB_PORT'],
+                        [vaultKey: 'DB_USER', envVar: 'DB_USER'],
+                        [vaultKey: 'DB_PASS', envVar: 'DB_PASS'],
+                        [vaultKey: 'DB_NAME', envVar: 'DB_NAME']
                     ]
-                ]
-            ]) {
-                // Generar archivo .env con todas las variables obtenidas
-                def envFileContent = """
-                API_DESCRIPTION=${env.API_DESCRIPTION}
-                API_NAME=${env.API_NAME}
-                API_VERSION=${env.API_VERSION}
-                API_AUTHOR=${env.API_AUTHOR}
-                DB_HOST=${env.DB_HOST}
-                DB_PORT=${env.DB_PORT}
-                DB_USER=${env.DB_USER}
-                DB_PASS=${env.DB_PASS}
-                DB_NAME=${env.DB_NAME}
-                """.stripIndent()
 
-                writeFile file: '.env', text: envFileContent
-                echo ".env generado con éxito:"
-                sh 'cat .env'
+                    withVault([
+                        vaultSecrets: [
+                            [
+                                path: 'secret/local/api_auth/db',
+                                engineVersion: 2,
+                                credentialsId: 'skaotico_token_vault',
+                                secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') }
+                            ],
+                            [
+                                path: 'secret/local/api_auth/config',
+                                engineVersion: 2,
+                                credentialsId: 'skaotico_token_vault',
+                                secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') }
+                            ]
+                        ]
+                    ]) {
+                        def envFileContent = """
+API_DESCRIPTION=${env.API_DESCRIPTION}
+API_NAME=${env.API_NAME}
+API_VERSION=${env.API_VERSION}
+API_AUTHOR=${env.API_AUTHOR}
+DB_HOST=${env.DB_HOST}
+DB_PORT=${env.DB_PORT}
+DB_USER=${env.DB_USER}
+DB_PASS=${env.DB_PASS}
+DB_NAME=${env.DB_NAME}
+""".stripIndent()
+                        writeFile file: '.env', text: envFileContent
+                        echo '.env generado con éxito'
+                        sh 'cat .env'
+                    }
+                }
             }
         }
-    }
-}
-//   stage('Obtener secretos desde Vault') {
-//     steps {
-//         script {
-//             // Lista de secretos a obtener de Vault
-//             def vaultSecrets = [
-//                 [vaultKey: 'API_DESCRIPTION', envVar: 'API_DESCRIPTION'],
-//                 [vaultKey: 'API_NAME', envVar: 'API_NAME'],
-//                 [vaultKey: 'API_VERSION', envVar: 'API_VERSION'],
-//                 [vaultKey: 'API_AUTHOR', envVar: 'API_AUTHOR'],
-//                 [vaultKey: 'DB_HOST', envVar: 'DB_HOST'],
-//                 [vaultKey: 'DB_PORT', envVar: 'DB_PORT'],
-//                 [vaultKey: 'DB_USER', envVar: 'DB_USER'],
-//                 [vaultKey: 'DB_PASS', envVar: 'DB_PASS'],
-//                 [vaultKey: 'DB_NAME', envVar: 'DB_NAME']
-//             ]
 
-//             // Obtener secretos desde Vault
-//             withVault([
-//                 vaultSecrets: [[
-//                     path: 'secret/local/api_auth/db',    // Path de los secretos de DB
-//                     engineVersion: 2,
-//                     credentialsId: 'skaotico_token_vault',
-//                     secretValues: vaultSecrets.findAll { it.envVar.startsWith('DB_') } // Solo DB_ para este path
-//                 ]],
-//                 vaultSecrets: [[
-//                     path: 'secret/local/api_auth/config', // Path de los secretos de configuración
-//                     engineVersion: 2,
-//                     credentialsId: 'skaotico_token_vault',
-//                     secretValues: vaultSecrets.findAll { !it.envVar.startsWith('DB_') } // Solo API_ para este path
-//                 ]]
-//             ]) {
-//                 // Generar archivo .env con todas las variables obtenidas
-//                 def envFileContent = """
-//                 API_DESCRIPTION=${env.API_DESCRIPTION}
-//                 API_NAME=${env.API_NAME}
-//                 API_VERSION=${env.API_VERSION}
-//                 API_AUTHOR=${env.API_AUTHOR}
-//                 DB_HOST=${env.DB_HOST}
-//                 DB_PORT=${env.DB_PORT}
-//                 DB_USER=${env.DB_USER}
-//                 DB_PASS=${env.DB_PASS}
-//                 DB_NAME=${env.DB_NAME}
-//                 """.stripIndent()
+        /**
+         * Stage: Construir y ejecutar imagen Docker
+         * - Construye la imagen Docker usando el nombre base y el tag incremental.
+         * - Elimina contenedores anteriores con el mismo nombre si existen.
+         * - Ejecuta el contenedor localmente mapeando el puerto 3000.
+         */
+        stage('Construir y ejecutar imagen Docker') {
+            steps {
+                script {
+                    echo "Construyendo imagen Docker: ${IMAGE_NAME}:${IMAGE_TAG}"
 
-//                 writeFile file: '.env', text: envFileContent
-//                 echo ".env generado con éxito:"
-//                 sh 'cat .env'
-//             }
-//         }
-//     }
-// }
+                    // Construir la imagen Docker
+                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
 
+                    // Eliminar contenedor anterior si existe
+                    sh """
+                        if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
+                            docker rm -f ${IMAGE_NAME}
+                        fi
+                    """
 
-        // stage('Construir imagen Docker') {
-        //     steps {
-        //         echo "Construyendo imagen Docker: ${IMAGE_NAME}:${IMAGE_TAG}"
-        //         sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-        //     }
-        // }
+                    // Ejecutar el contenedor en background
+                    sh "docker run -d --name ${IMAGE_NAME} -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Contenedor ${IMAGE_NAME} corriendo en localhost:3000"
+                }
+            }
+        }
 
-        // stage('Login en Nexus') {
-        //     steps {
-        //         echo 'Realizando login en Nexus...'
-        //         withCredentials([usernamePassword(
-        //             credentialsId: 'skaotico-credencial-nexus-admin',
-        //             usernameVariable: 'NEXUS_USER',
-        //             passwordVariable: 'NEXUS_PASS'
-        //         )]) {
-        //             sh "docker login http://${NEXUS_REPO} -u ${NEXUS_USER} -p ${NEXUS_PASS}"
-        //         }
-        //     }
-        // }
-
-        // stage('Subir imagen a Nexus') {
-        //     steps {
-        //         echo 'Etiquetando y subiendo imagen a Nexus...'
-        //         sh """
-        //             docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //             docker push ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //         """
-        //     }
-        // }
-
-        // stage('Desplegar contenedor Docker local') {
-        //     steps {
-        //         echo 'Desplegando contenedor local...'
-        //         sh '''
-        //             # Detener y eliminar contenedor previo si existe
-        //             if [ \$(docker ps -q --filter "name=${IMAGE_NAME}") ]; then
-        //                 docker stop ${IMAGE_NAME}
-        //             fi
-
-        //             if [ \$(docker ps -aq --filter "name=${IMAGE_NAME}") ]; then
-        //                 docker rm ${IMAGE_NAME}
-        //             fi
-
-        //             # Descargar nueva imagen y ejecutar contenedor
-        //             docker pull ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //             docker run -d --name ${IMAGE_NAME} --env-file .env.dev -p 3001:3001 \
-        //                     ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-
-    //             docker network connect ticketmante-backend-net-redis api-auth || true
-    //         '''
-    //     }
-    // }
     }
 
+    /**
+     * Sección post:
+     * - success: mensaje al completar pipeline exitosamente.
+     * - failure: mensaje si el pipeline falla.
+     */
     post {
         success {
             echo 'Pipeline completado exitosamente.'

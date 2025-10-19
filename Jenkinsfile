@@ -72,7 +72,7 @@ pipeline {
                     withVault([vaultSecrets: [[
                 path: 'secret/data/local/api_auth/db',
                 engineVersion: '2',
-                credentialsId: 'skaotico_token_vault_real',
+                credentialsId: 'skaotico_token_vault',
                 secretValues: testSecrets
             ]]]) {
                         // Solo mostrar que la variable se obtuvo (sin revelar contraseña u otro secreto)

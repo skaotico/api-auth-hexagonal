@@ -1,18 +1,13 @@
 pipeline {
     agent any
-
     options {
         skipDefaultCheckout(true)
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
-
     environment {
         IMAGE_NAME = 'api-auth-hex'
-    // NEXUS_REPO = '25.42.51.28:5000/api-auth'
-    // VAULT_PATH = 'secret/back/node/api-auth/dev'
     }
-
     stages {
         stage('Clonar repositorio') {
             steps {
@@ -20,18 +15,16 @@ pipeline {
                 cleanWs()
                 script {
                     git branch: 'develop',
-                         credentialsId: 'git-token-skaotico',
-                         url: 'https://github.com/skaotico/api-auth-hexagonal'
+                          credentialsId: 'git-token-skaotico',
+                          url: 'https://github.com/skaotico/api-auth-hexagonal'
                     env.IMAGE_TAG = sh(
                         script: 'git rev-parse --short HEAD',
                         returnStdout: true
                     ).trim()
-
                     echo "IMAGE_TAG generado: ${env.IMAGE_TAG}"
                 }
             }
         }
-
         stage('Instalar dependencias y validar código') {
             steps {
                 echo 'Instalando dependencias y ejecutando herramientas de calidad...'
@@ -42,104 +35,50 @@ pipeline {
                 '''
             }
         }
-
-        // stage('Análisis de código con SonarQube') {
-        //     environment {
-        //         SCANNER_HOME = tool 'SonarScanner'
-        //     }
-        //     steps {
-        //         echo 'Ejecutando SonarQube Scanner...'
-        //         withSonarQubeEnv('sonar-dev') {
-        //             sh """
-        //                 ${SCANNER_HOME}/bin/sonar-scanner \
-        //                 -Dsonar.projectKey=api-auth \
-        //                 -Dsonar.projectName="TicketMante API Auth" \
-        //                 -Dsonar.sources=. \
-        //                 -Dsonar.host.url=\${env.SONAR_HOST_URL} \
-        //                 -Dsonar.login=\${env.SONAR_AUTH_TOKEN}
-        //             """
-        //         }
-        //     }
-        // }
-
-        stage('Probar conexión a Vault') {
+        stage('Obtener secretos de Vault dinámicamente') {
             steps {
                 script {
-                    def testSecrets = [
-                [vaultKey: 'DB_HOST', envVar: 'DB_HOST']  
-            ]
-
-                    withVault([vaultSecrets: [[
-                path: 'secret/local/api_auth/db',
-                engineVersion: '2',
-                credentialsId: 'skaotico_token_vault',
-                secretValues: testSecrets
-            ]]]) {
-                        // Solo mostrar que la variable se obtuvo (sin revelar contraseña u otro secreto)
-                        if (env.DB_HOST) {
-                            echo 'Conexión a Vault OK, DB_HOST obtenido'
-                } else {
-                            error 'No se pudo obtener DB_HOST desde Vault'
+                    def vaultPaths = [
+                        'secret/data/local/api_auth/db',
+                        'secret/data/local/api_auth/config'
+                    ]
+                    
+                    withCredentials([string(credentialsId: 'skaotico_token_vault', variable: 'VAULT_TOKEN')]) {
+                        vaultPaths.each { vaultPath ->
+                            echo "Obteniendo secretos desde ${vaultPath}..."
+                            def response = sh(
+                                script: "curl -s --header \"X-Vault-Token: ${VAULT_TOKEN}\" http://vault_vault_dev:8200/v1/${vaultPath}",
+                                returnStdout: true
+                            ).trim()
+                            
+                            def json = readJSON text: response
+                            def secretsMap = json.data.data // KV v2: secretos en data.data
+                            
+                            secretsMap.each { key, value ->
+                                env[key] = value
+                                echo "Variable ${key} cargada desde ${vaultPath}"
+                            }
                         }
-            }
+                    }
                 }
             }
         }
-
-        // stage('Construir imagen Docker') {
-        //     steps {
-        //         echo "Construyendo imagen Docker: ${IMAGE_NAME}:${IMAGE_TAG}"
-        //         sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-        //     }
-        // }
-
-        // stage('Login en Nexus') {
-        //     steps {
-        //         echo 'Realizando login en Nexus...'
-        //         withCredentials([usernamePassword(
-        //             credentialsId: 'skaotico-credencial-nexus-admin',
-        //             usernameVariable: 'NEXUS_USER',
-        //             passwordVariable: 'NEXUS_PASS'
-        //         )]) {
-        //             sh "docker login http://${NEXUS_REPO} -u ${NEXUS_USER} -p ${NEXUS_PASS}"
-        //         }
-        //     }
-        // }
-
-        // stage('Subir imagen a Nexus') {
-        //     steps {
-        //         echo 'Etiquetando y subiendo imagen a Nexus...'
-        //         sh """
-        //             docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //             docker push ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //         """
-        //     }
-        // }
-
-        // stage('Desplegar contenedor Docker local') {
-        //     steps {
-        //         echo 'Desplegando contenedor local...'
-        //         sh '''
-        //             # Detener y eliminar contenedor previo si existe
-        //             if [ \$(docker ps -q --filter "name=${IMAGE_NAME}") ]; then
-        //                 docker stop ${IMAGE_NAME}
-        //             fi
-
-        //             if [ \$(docker ps -aq --filter "name=${IMAGE_NAME}") ]; then
-        //                 docker rm ${IMAGE_NAME}
-        //             fi
-
-        //             # Descargar nueva imagen y ejecutar contenedor
-        //             docker pull ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-        //             docker run -d --name ${IMAGE_NAME} --env-file .env.dev -p 3001:3001 \
-        //                     ${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-
-    //             docker network connect ticketmante-backend-net-redis api-auth || true
-    //         '''
-    //     }
-    // }
+        stage('Guardar secretos en archivo .env') {
+            steps {
+                script {
+                    def envFile = "${WORKSPACE}/.env"
+                    new File(envFile).withWriter('UTF-8') { writer ->
+                        env.getEnvironment().each { key, value ->
+                            if (value != null && key in ['DB_HOST','DB_PORT','DB_USER','DB_PASSWORD','API_NAME','API_VERSION']) {
+                                writer.writeLine("${key}=${value}")
+                            }
+                        }
+                    }
+                    echo "Archivo .env generado en: ${envFile}"
+                }
+            }
+        }
     }
-
     post {
         success {
             echo 'Pipeline completado exitosamente.'

@@ -84,13 +84,13 @@ pipeline {
                     withVault([vaultSecrets: [[
                 path: 'secret/data/local/api_auth/db',
                 engineVersion: '2',
-                credentialsId: 'skaotico_token_vault',
+                credentialsId: 'skaotico_token_vault_real',
                 secretValues: dbSecrets
             ]]]) {
                         withVault([vaultSecrets: [[
                     path: 'secret/data/local/api_auth/config',
                     engineVersion: '2',
-                    credentialsId: 'skaotico_token_vault',
+                    credentialsId: 'skaotico_token_vault_real',
                     secretValues: configSecrets
                 ]]]) {
                             def envFileContent = """\

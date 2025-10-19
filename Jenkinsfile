@@ -35,34 +35,48 @@ pipeline {
                 '''
             }
         }
-        stage('Obtener secretos de Vault dinámicamente') {
-            steps {
-                script {
-                    def vaultPaths = [
-                        'secret/data/local/api_auth/db',
-                        'secret/data/local/api_auth/config'
-                    ]
+    stage('Obtener secretos de Vault dinámicamente') {
+    steps {
+        script {
+            def vaultPaths = [
+                'secret/data/local/api_auth/db',
+                'secret/data/local/api_auth/config'
+            ]
+            
+            // Usamos la credencial tipo Secret Text para obtener el token
+            withCredentials([string(credentialsId: 'skaotico_token_vault_string', variable: 'VAULT_TOKEN')]) {
+                
+                def envFileContent = ""
+                
+                vaultPaths.each { vaultPath ->
+                    echo "Obteniendo secretos desde ${vaultPath}..."
                     
-                    withCredentials([string(credentialsId: 'skaotico_token_vault', variable: 'VAULT_TOKEN')]) {
-                        vaultPaths.each { vaultPath ->
-                            echo "Obteniendo secretos desde ${vaultPath}..."
-                            def response = sh(
-                                script: "curl -s --header \"X-Vault-Token: ${VAULT_TOKEN}\" http://vault_vault_dev:8200/v1/${vaultPath}",
-                                returnStdout: true
-                            ).trim()
-                            
-                            def json = readJSON text: response
-                            def secretsMap = json.data.data // KV v2: secretos en data.data
-                            
-                            secretsMap.each { key, value ->
-                                env[key] = value
-                                echo "Variable ${key} cargada desde ${vaultPath}"
-                            }
-                        }
+                    // Llamada a Vault
+                    def response = sh(
+                        script: "curl -s --header \"X-Vault-Token: ${VAULT_TOKEN}\" http://vault_vault_dev:8200/v1/${vaultPath}",
+                        returnStdout: true
+                    ).trim()
+                    
+                    def json = readJSON text: response
+                    def secretsMap = json.data.data // KV v2: secretos en data.data
+                    
+                    // Guardamos cada secreto en env y en contenido para .env
+                    secretsMap.each { key, value ->
+                        env[key] = value
+                        envFileContent += "${key}=${value}\n"
+                        echo "Variable ${key} cargada desde ${vaultPath}"
                     }
                 }
+                
+                // Crear archivo .env
+                writeFile file: '.env', text: envFileContent
+                echo ".env generado con éxito:"
+                sh 'cat .env'
             }
         }
+    }
+}
+
         stage('Guardar secretos en archivo .env') {
             steps {
                 script {

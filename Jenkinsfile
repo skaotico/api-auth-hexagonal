@@ -19,8 +19,8 @@ pipeline {
 
                 echo "Clonando rama 'develop' desde GitHub..."
                 git branch: 'develop',
-                    credentialsId: 'github_token',
-                    url: 'https://github.com/skaotico/api-auth'
+                    credentialsId: 'git-token-skaotico',
+                    url: 'https://github.com/skaotico/api-auth-hexagonal'
 
                 script {
                     env.IMAGE_TAG = sh(

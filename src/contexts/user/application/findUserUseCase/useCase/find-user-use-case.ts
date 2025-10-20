@@ -1,5 +1,5 @@
 import { UserRepository } from "src/contexts/user/domain/repository/user.repository";
-import { FindUserDto } from "../dto/find-user.request.dto";
+import { FindUserDto } from "../dto/find-user.dto";
 import { User } from "../../../domain/entities/user";
 import { PrimitiveUser } from "../../../domain/primitive/user.primitive";
 
@@ -18,9 +18,7 @@ export class FindUserUseCase {
         if (!userDomain) {
             throw new Error("Usuario no encontrado.");
         }
-
-
-
+ 
 
         return { user: userDomain.toPrimitives() };
 

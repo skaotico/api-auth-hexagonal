@@ -16,9 +16,15 @@ pipeline {
     /**
      * Variables de entorno globales:
      * - IMAGE_NAME: nombre base de la imagen Docker que se construirá.
+     * - NEXUS_URL: URL base del Nexus Repository Manager.
+     * - NEXUS_REPO: nombre del repositorio Docker en Nexus (debe existir previamente).
+     * - NEXUS_CREDENTIALS: ID de las credenciales guardadas en Jenkins para Nexus.
      */
     environment {
         IMAGE_NAME = 'api-auth-hex'
+        NEXUS_URL = 'nexus_nexus_dev:5000'
+        NEXUS_REPO = 'docker-hosted-api-auth'
+        NEXUS_CREDENTIALS = 'nexus_credentials'
     }
 
     stages {
@@ -119,33 +125,67 @@ DB_NAME=${env.DB_NAME}
         }
 
         /**
-         * Stage: Construir y ejecutar imagen Docker
+         * Stage: Construir imagen Docker
          * - Construye la imagen Docker usando el nombre base y el tag incremental.
-         * - Elimina contenedores anteriores con el mismo nombre si existen.
-         * - Ejecuta el contenedor localmente mapeando el puerto 3000.
+         * - Muestra el tamaño de la imagen generada.
          */
-        stage('Construir y ejecutar imagen Docker') {
+        stage('Construir imagen Docker') {
             steps {
                 script {
                     echo "Construyendo imagen Docker: ${IMAGE_NAME}:${IMAGE_TAG}"
-
-                    // Construir la imagen Docker
                     sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-
-                    // Eliminar contenedor anterior si existe
-                    sh """
-                        if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
-                            docker rm -f ${IMAGE_NAME}
-                        fi
-                    """
-
-                    // Ejecutar el contenedor en background
-                    sh "docker run -d --name ${IMAGE_NAME} -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}"
-                    echo "Contenedor ${IMAGE_NAME} corriendo en localhost:3000"
+                    sh "docker images ${IMAGE_NAME}:${IMAGE_TAG}"
                 }
             }
         }
 
+        /**
+         * Stage: Subir imagen a Nexus
+         * - Realiza login en el registro Docker de Nexus usando credenciales almacenadas en Jenkins.
+         * - Etiqueta la imagen local con la URL del registro Nexus.
+         * - Sube la imagen al repositorio Docker configurado en Nexus.
+         */
+        stage('Subir imagen a Nexus') {
+            steps {
+                script {
+                    echo "Subiendo imagen ${IMAGE_NAME}:${IMAGE_TAG} a Nexus en ${NEXUS_URL}"
+
+                    withCredentials([usernamePassword(credentialsId: "${NEXUS_CREDENTIALS}", usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                        // Login al registro Nexus
+                        sh "docker login -u ${NEXUS_USER} -p ${NEXUS_PASS} ${NEXUS_URL}"
+
+                        // Etiquetar y subir imagen
+                        sh """
+                            docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_URL}/${NEXUS_REPO}:${IMAGE_TAG}
+                            docker push ${NEXUS_URL}/${NEXUS_REPO}:${IMAGE_TAG}
+                        """
+
+                        // Logout del registro
+                        sh "docker logout ${NEXUS_URL}"
+                    }
+                }
+            }
+        }
+
+        /**
+         * Stage: Ejecutar contenedor local (opcional)
+         * - Elimina contenedores anteriores con el mismo nombre si existen.
+         * - Ejecuta el contenedor localmente mapeando el puerto 3000.
+         */
+        stage('Ejecutar contenedor local (opcional)') {
+            steps {
+                script {
+                    echo "Iniciando contenedor local para pruebas"
+                    sh """
+                        if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
+                            docker rm -f ${IMAGE_NAME}
+                        fi
+                        docker run -d --name ${IMAGE_NAME} -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}
+                    """
+                    echo "Contenedor ${IMAGE_NAME} corriendo en localhost:3000"
+                }
+            }
+        }
     }
 
     /**
@@ -155,10 +195,10 @@ DB_NAME=${env.DB_NAME}
      */
     post {
         success {
-            echo 'Pipeline completado exitosamente.'
+            echo '✅ Pipeline completado exitosamente. Imagen subida a Nexus.'
         }
         failure {
-            echo 'Pipeline falló. Revise los registros para más información.'
+            echo '❌ Pipeline falló. Revise los registros para más información.'
         }
     }
 }

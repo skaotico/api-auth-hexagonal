@@ -5,7 +5,7 @@ import jwt, { SignOptions, JwtPayload } from 'jsonwebtoken';
 
 @Injectable()
 export class JwtHelper implements IJwtService {
-    private readonly secret = process.env.JWT_SECRET || 'default_secret';
+    private readonly secret = process.env.JWT_SECRET !;
 
     sign(payload: Record<string, any>, expiresIn: `${number}${'s' | 'm' | 'h' | 'd' | 'w' | 'y'}` = '5m'): string {
         return jwt.sign(payload, this.secret, { expiresIn });
